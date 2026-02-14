@@ -11,11 +11,11 @@ if TYPE_CHECKING:
 class Emoji:
     """Represents a custom emoji in a Fluxer guild."""
 
-    id: str
+    id: int
     name: str
     animated: bool = False
-    guild_id: str | None = None
-    roles: list[str] = field(default_factory=list)
+    guild_id: int | None = None
+    roles: list[int] = field(default_factory=list)
     managed: bool = False
     available: bool = True
 
@@ -27,14 +27,14 @@ class Emoji:
         data: dict[str, Any],
         http: HTTPClient | None = None,
         *,
-        guild_id: str | None = None,
+        guild_id: int | None = None,
     ) -> Emoji:
         return cls(
-            id=data["id"],
+            id=int(data["id"]),
             name=data.get("name", ""),
             animated=data.get("animated", False),
-            guild_id=guild_id or data.get("guild_id"),
-            roles=data.get("roles", []),
+            guild_id=guild_id or (int(data["guild_id"]) if data.get("guild_id") else None),
+            roles=[int(role_id) for role_id in data.get("roles", [])],
             managed=data.get("managed", False),
             available=data.get("available", True),
             _http=http,

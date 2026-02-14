@@ -21,7 +21,7 @@ def snowflake_to_datetime(snowflake: str | int) -> datetime:
     return datetime.fromtimestamp(timestamp_ms / 1000, tz=timezone.utc)
 
 
-def datetime_to_snowflake(dt: datetime) -> str:
+def datetime_to_snowflake(dt: datetime) -> int:
     """Convert a datetime to a Snowflake ID (useful for pagination).
 
     This creates a Snowflake with only the timestamp component set.
@@ -31,11 +31,11 @@ def datetime_to_snowflake(dt: datetime) -> str:
         dt: A datetime object.
 
     Returns:
-        A Snowflake string.
+        A Snowflake integer.
     """
     timestamp_ms = int(dt.timestamp() * 1000)
     snowflake = (timestamp_ms - FLUXER_EPOCH) << 22
-    return str(snowflake)
+    return snowflake
 
 
 def _try_int(value: str | int | None) -> int | None:

@@ -14,9 +14,9 @@ if TYPE_CHECKING:
 class Webhook:
     """Represents a Fluxer webhook."""
 
-    id: str
-    guild_id: str
-    channel_id: str
+    id: int
+    guild_id: int
+    channel_id: int
     user: User
     name: str
     avatar: str | None
@@ -30,7 +30,7 @@ class Webhook:
         data: dict[str, Any],
         http: HTTPClient | None = None,
         *,
-        guild_id: str | None = None,
+        guild_id: int | None = None,
     ) -> Webhook:
         """Construct a Webhook from raw API data.
 
@@ -43,9 +43,9 @@ class Webhook:
             A new Webhook instance.
         """
         return cls(
-            id=data["id"],
-            guild_id=guild_id or data["guild_id"],
-            channel_id=data["channel_id"],
+            id=int(data["id"]),
+            guild_id=guild_id or int(data["guild_id"]),
+            channel_id=int(data["channel_id"]),
             user=User.from_data(data["user"], http),
             name=data["name"],
             avatar=data.get("avatar", None),
@@ -58,7 +58,7 @@ class Webhook:
         *,
         name: str | None = None,
         avatar: str | None = None,
-        channel_id: str | None = None,
+        channel_id: int | None = None,
     ) -> Webhook:
         """Edit this webhook.
 

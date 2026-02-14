@@ -32,15 +32,16 @@ class Route:
     def __init__(self, method: str, path: str, **params: Any) -> None:
         self.method = method
         self.path = path
-        self.params = params
-        self.url = BASE_URL + path.format(**params)
+        # Convert all parameters to strings for URL formatting (handles int IDs)
+        self.params = {k: str(v) for k, v in params.items()}
+        self.url = BASE_URL + path.format(**self.params)
 
         # Rate limit bucket key: method + path template + major params
         # Major params (channel_id, guild_id) get their own buckets
         self.bucket = f"{method} {path}"
         for key in ("channel_id", "guild_id", "webhook_id"):
-            if key in params:
-                self.bucket += f":{params[key]}"
+            if key in self.params:
+                self.bucket += f":{self.params[key]}"
 
 
 class RateLimiter:
@@ -265,7 +266,7 @@ class HTTPClient:
         """GET /users/@me"""
         return await self.request(Route("GET", "/users/@me"))
 
-    async def get_user(self, user_id: str) -> dict[str, Any]:
+    async def get_user(self, user_id: int | str) -> dict[str, Any]:
         """GET /users/{user_id}"""
         return await self.request(Route("GET", "/users/{user_id}", user_id=user_id))
 
@@ -274,7 +275,7 @@ class HTTPClient:
         return await self.request(Route("GET", "/users/@me/guilds"))
 
     # -- Channels --
-    async def get_channel(self, channel_id: str) -> dict[str, Any]:
+    async def get_channel(self, channel_id: int | str) -> dict[str, Any]:
         """GET /channels/{channel_id}"""
         return await self.request(
             Route("GET", "/channels/{channel_id}", channel_id=channel_id)
@@ -283,7 +284,7 @@ class HTTPClient:
     # -- Messages --
     async def send_message(
         self,
-        channel_id: str,
+        channel_id: int | str,
         *,
         content: str | None = None,
         embeds: list[dict[str, Any]] | None = None,
@@ -314,11 +315,11 @@ class HTTPClient:
 
     async def get_messages(
         self,
-        channel_id: str,
+        channel_id: int | str,
         *,
         limit: int = 50,
-        before: str | None = None,
-        after: str | None = None,
+        before: int | str | None = None,
+        after: int | str | None = None,
     ) -> list[dict[str, Any]]:
         """GET /channels/{channel_id}/messages"""
         params: dict[str, Any] = {"limit": limit}
@@ -332,8 +333,8 @@ class HTTPClient:
 
     async def edit_message(
         self,
-        channel_id: str,
-        message_id: str,
+        channel_id: int | str,
+        message_id: int | str,
         *,
         content: str | None = None,
         embeds: list[dict[str, Any]] | None = None,
@@ -352,7 +353,7 @@ class HTTPClient:
             payload["embeds"] = embeds
         return await self.request(route, json=payload)
 
-    async def delete_message(self, channel_id: str, message_id: str) -> None:
+    async def delete_message(self, channel_id: int | str, message_id: int | str) -> None:
         """DELETE /channels/{channel_id}/messages/{message_id}"""
         route = Route(
             "DELETE",
@@ -363,14 +364,39 @@ class HTTPClient:
         await self.request(route)
 
     # -- Guilds --
-    async def get_guild(self, guild_id: str) -> dict[str, Any]:
+    async def get_guild(self, guild_id: int | str) -> dict[str, Any]:
         """GET /guilds/{guild_id}"""
         return await self.request(Route("GET", "/guilds/{guild_id}", guild_id=guild_id))
 
-    async def get_guild_channels(self, guild_id: str) -> list[dict[str, Any]]:
+    async def get_guild_channels(self, guild_id: int | str) -> list[dict[str, Any]]:
         """GET /guilds/{guild_id}/channels"""
         return await self.request(
             Route("GET", "/guilds/{guild_id}/channels", guild_id=guild_id)
+        )
+
+    async def get_guild_member(
+        self, guild_id: int | str, user_id: int | str
+    ) -> dict[str, Any]:
+        """GET /guilds/{guild_id}/members/{user_id} — Get a specific guild member."""
+        return await self.request(
+            Route(
+                "GET",
+                "/guilds/{guild_id}/members/{user_id}",
+                guild_id=guild_id,
+                user_id=user_id,
+            )
+        )
+
+    async def get_guild_members(
+        self, guild_id: int | str, *, limit: int = 100, after: int | str | None = None
+    ) -> list[dict[str, Any]]:
+        """GET /guilds/{guild_id}/members — List guild members."""
+        params: dict[str, Any] = {"limit": limit}
+        if after:
+            params["after"] = after
+
+        return await self.request(
+            Route("GET", "/guilds/{guild_id}/members", guild_id=guild_id), params=params
         )
 
     async def create_guild(
@@ -409,13 +435,13 @@ class HTTPClient:
 
         return await self.request(Route("POST", "/guilds"), json=payload)
 
-    async def delete_guild(self, guild_id: str) -> None:
+    async def delete_guild(self, guild_id: int | str) -> None:
         """DELETE /guilds/{guild_id}"""
         await self.request(Route("DELETE", "/guilds/{guild_id}", guild_id=guild_id))
 
     async def modify_guild(
         self,
-        guild_id: str,
+        guild_id: int | str,
         *,
         name: str | None = None,
         icon: bytes | None = None,
@@ -447,7 +473,7 @@ class HTTPClient:
         )
 
     # -- Roles --
-    async def get_guild_roles(self, guild_id: str) -> list[dict[str, Any]]:
+    async def get_guild_roles(self, guild_id: int | str) -> list[dict[str, Any]]:
         """GET /guilds/{guild_id}/roles"""
         return await self.request(
             Route("GET", "/guilds/{guild_id}/roles", guild_id=guild_id)
@@ -455,7 +481,7 @@ class HTTPClient:
 
     async def create_guild_role(
         self,
-        guild_id: str,
+        guild_id: int | str,
         *,
         name: str | None = None,
         permissions: int | None = None,
@@ -484,8 +510,8 @@ class HTTPClient:
 
     async def modify_guild_role(
         self,
-        guild_id: str,
-        role_id: str,
+        guild_id: int | str,
+        role_id: int | str,
         *,
         name: str | None = None,
         permissions: int | None = None,
@@ -520,7 +546,7 @@ class HTTPClient:
             json=payload,
         )
 
-    async def delete_guild_role(self, guild_id: str, role_id: str) -> None:
+    async def delete_guild_role(self, guild_id: int | str, role_id: int | str) -> None:
         """DELETE /guilds/{guild_id}/roles/{role_id}"""
         await self.request(
             Route(
@@ -534,7 +560,7 @@ class HTTPClient:
     # -- Channels (create/modify) --
     async def create_guild_channel(
         self,
-        guild_id: str,
+        guild_id: int | str,
         *,
         name: str,
         type: int = 0,
@@ -542,7 +568,7 @@ class HTTPClient:
         bitrate: int | None = None,
         user_limit: int | None = None,
         position: int | None = None,
-        parent_id: str | None = None,
+        parent_id: int | str | None = None,
         nsfw: bool = False,
         **kwargs: Any,
     ) -> dict[str, Any]:
@@ -588,13 +614,13 @@ class HTTPClient:
 
     async def modify_channel(
         self,
-        channel_id: str,
+        channel_id: int | str,
         *,
         name: str | None = None,
         type: int | None = None,
         topic: str | None = None,
         position: int | None = None,
-        parent_id: str | None = None,
+        parent_id: int | str | None = None,
         nsfw: bool | None = None,
         **kwargs: Any,
     ) -> dict[str, Any]:
@@ -621,7 +647,7 @@ class HTTPClient:
             json=payload,
         )
 
-    async def delete_channel(self, channel_id: str) -> None:
+    async def delete_channel(self, channel_id: int | str) -> None:
         """DELETE /channels/{channel_id}"""
         await self.request(
             Route("DELETE", "/channels/{channel_id}", channel_id=channel_id)
@@ -684,7 +710,7 @@ class HTTPClient:
         return await self.request(Route("PATCH", "/users/@me"), json=payload)
 
     # -- Emojis --
-    async def get_guild_emojis(self, guild_id: str) -> list[dict[str, Any]]:
+    async def get_guild_emojis(self, guild_id: int | str) -> list[dict[str, Any]]:
         """GET /guilds/{guild_id}/emojis — Get all emojis for a guild.
 
         Returns:
@@ -694,7 +720,7 @@ class HTTPClient:
             Route("GET", "/guilds/{guild_id}/emojis", guild_id=guild_id)
         )
 
-    async def get_guild_emoji(self, guild_id: str, emoji_id: str) -> dict[str, Any]:
+    async def get_guild_emoji(self, guild_id: int | str, emoji_id: int | str) -> dict[str, Any]:
         """GET /guilds/{guild_id}/emojis/{emoji_id} — Get a specific emoji.
 
         Returns:
@@ -711,8 +737,8 @@ class HTTPClient:
 
     async def delete_guild_emoji(
         self,
-        guild_id: str,
-        emoji_id: str,
+        guild_id: int | str,
+        emoji_id: int | str,
         *,
         reason: str | None = None,
     ) -> None:
@@ -734,13 +760,13 @@ class HTTPClient:
         )
 
     # ~~ Webhooks ~
-    async def get_guild_webhooks(self, guild_id: str) -> list[dict[str, Any]]:
+    async def get_guild_webhooks(self, guild_id: int | str) -> list[dict[str, Any]]:
         """GET /guilds/{guild_id}/webhooks"""
         return await self.request(
             Route("GET", "/guilds/{guild_id}/webhooks", guild_id=guild_id)
         )
 
-    async def get_channel_webhooks(self, channel_id: str) -> list[dict[str, Any]]:
+    async def get_channel_webhooks(self, channel_id: int | str) -> list[dict[str, Any]]:
         """GET /channels/{channel_id}/webhooks"""
         return await self.request(
             Route("GET", "/channels/{channel_id}/webhooks", channel_id=channel_id)
@@ -748,7 +774,7 @@ class HTTPClient:
 
     async def create_webhook(
         self,
-        channel_id: str,
+        channel_id: int | str,
         *,
         name: str,
         avatar: str | None = None,
@@ -762,14 +788,14 @@ class HTTPClient:
             json=payload,
         )
 
-    async def get_webhook(self, webhook_id: str) -> dict[str, Any]:
+    async def get_webhook(self, webhook_id: int | str) -> dict[str, Any]:
         """GET /webhooks/{webhook_id}"""
         return await self.request(
             Route("GET", "/webhooks/{webhook_id}", webhook_id=webhook_id)
         )
 
     async def get_webhook_with_token(
-        self, webhook_id: str, token: str
+        self, webhook_id: int | str, token: str
     ) -> dict[str, Any]:
         """GET /webhooks/{webhook_id}/{token}"""
         return await self.request(
@@ -783,11 +809,11 @@ class HTTPClient:
 
     async def modify_webhook(
         self,
-        webhook_id: str,
+        webhook_id: int | str,
         *,
         name: str | None = None,
         avatar: str | None = None,
-        channel_id: str | None = None,
+        channel_id: int | str | None = None,
     ) -> dict[str, Any]:
         """PATCH /webhooks/{webhook_id}"""
         payload: dict[str, Any] = {}
@@ -804,12 +830,12 @@ class HTTPClient:
 
     async def modify_webhook_with_token(
         self,
-        webhook_id: str,
+        webhook_id: int | str,
         token: str,
         *,
         name: str | None = None,
         avatar: str | None = None,
-        channel_id: str | None = None,
+        channel_id: int | str | None = None,
     ) -> dict[str, Any]:
         """PATCH /webhooks/{webhook_id}/{token}"""
         payload: dict[str, Any] = {}
@@ -830,7 +856,7 @@ class HTTPClient:
         )
 
     async def delete_webhook(
-        self, webhook_id: str, *, reason: str | None = None
+        self, webhook_id: int | str, *, reason: str | None = None
     ) -> None:
         """DELETE /webhooks/{webhook_id}"""
         await self.request(
@@ -838,7 +864,7 @@ class HTTPClient:
             reason=reason,
         )
 
-    async def delete_webhook_with_token(self, webhook_id: str, token: str) -> None:
+    async def delete_webhook_with_token(self, webhook_id: int | str, token: str) -> None:
         """DELETE /webhooks/{webhook_id}/{token}"""
         await self.request(
             Route(
@@ -851,7 +877,7 @@ class HTTPClient:
 
     async def execute_webhook(
         self,
-        webhook_id: str,
+        webhook_id: int | str,
         token: str,
         *,
         content: str | None = None,

@@ -14,10 +14,10 @@ if TYPE_CHECKING:
 class Guild:
     """Represents a Fluxer guild (server/community)."""
 
-    id: str
+    id: int
     name: str | None = None
     icon: str | None = None
-    owner_id: str | None = None
+    owner_id: int | None = None
     member_count: int | None = None
     unavailable: bool = False
 
@@ -26,10 +26,10 @@ class Guild:
     @classmethod
     def from_data(cls, data: dict[str, Any], http: HTTPClient | None = None) -> Guild:
         return cls(
-            id=data["id"],
+            id=int(data["id"]),
             name=data.get("name"),
             icon=data.get("icon"),
-            owner_id=data.get("owner_id"),
+            owner_id=int(data["owner_id"]) if data.get("owner_id") else None,
             member_count=data.get("member_count"),
             unavailable=data.get("unavailable", False),
             _http=http,

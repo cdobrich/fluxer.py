@@ -16,28 +16,28 @@ if TYPE_CHECKING:
 class Channel:
     """Represents a Fluxer channel (text, DM, voice, category, etc.)."""
 
-    id: str
+    id: int
     type: int
     name: str | None = None
-    guild_id: str | None = None
+    guild_id: int | None = None
     position: int | None = None
     topic: str | None = None
     nsfw: bool = False
-    parent_id: str | None = None
+    parent_id: int | None = None
 
     _http: HTTPClient | None = field(default=None, repr=False)
 
     @classmethod
     def from_data(cls, data: dict[str, Any], http: HTTPClient | None = None) -> Channel:
         return cls(
-            id=data["id"],
+            id=int(data["id"]),
             type=data["type"],
             name=data.get("name"),
-            guild_id=data.get("guild_id"),
+            guild_id=int(data["guild_id"]) if data.get("guild_id") else None,
             position=data.get("position"),
             topic=data.get("topic"),
             nsfw=data.get("nsfw", False),
-            parent_id=data.get("parent_id"),
+            parent_id=int(data["parent_id"]) if data.get("parent_id") else None,
             _http=http,
         )
 

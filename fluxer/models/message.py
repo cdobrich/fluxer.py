@@ -16,13 +16,13 @@ if TYPE_CHECKING:
 class Message:
     """Represents a message in a Fluxer channel."""
 
-    id: str
-    channel_id: str
+    id: int
+    channel_id: int
     content: str
     author: User
     timestamp: str
     edited_timestamp: str | None = None
-    guild_id: str | None = None
+    guild_id: int | None = None
     embeds: list[dict[str, Any]] = field(default_factory=list)
     attachments: list[dict[str, Any]] = field(default_factory=list)
     mentions: list[User] = field(default_factory=list)
@@ -39,13 +39,13 @@ class Message:
         mentions = [User.from_data(u, http) for u in data.get("mentions", [])]
 
         return cls(
-            id=data["id"],
-            channel_id=data["channel_id"],
+            id=int(data["id"]),
+            channel_id=int(data["channel_id"]),
             content=data.get("content", ""),
             author=author,
             timestamp=data["timestamp"],
             edited_timestamp=data.get("edited_timestamp"),
-            guild_id=data.get("guild_id"),
+            guild_id=int(data["guild_id"]) if data.get("guild_id") else None,
             embeds=data.get("embeds", []),
             attachments=data.get("attachments", []),
             mentions=mentions,

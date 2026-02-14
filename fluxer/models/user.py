@@ -12,13 +12,22 @@ if TYPE_CHECKING:
 
 @dataclass(slots=True)
 class User:
-    """Represents a Fluxer user."""
+    """Represents a Fluxer user.
 
-    id: str
+    This contains only the fields that are available across all endpoints
+    (guild members, message authors, etc.). Private user data (email, phone, etc.)
+    is only available via GET /users/@me and is not stored here.
+    """
+
+    # Core identity fields (available everywhere)
+    id: int
     username: str
     discriminator: str | None = None
-    avatar: str | None = None
+    global_name: str | None = None  # Display name/nickname
+    avatar_hash: str | None = None
+    avatar_color: str | None = None
     bot: bool = False
+    flags: int = 0
 
     # Back-reference (set after construction)
     _http: HTTPClient | None = field(default=None, repr=False)
@@ -26,11 +35,14 @@ class User:
     @classmethod
     def from_data(cls, data: dict[str, Any], http: HTTPClient | None = None) -> User:
         return cls(
-            id=data["id"],
+            id=int(data["id"]),
             username=data["username"],
             discriminator=data.get("discriminator"),
-            avatar=data.get("avatar"),
+            global_name=data.get("global_name"),
+            avatar_hash=data.get("avatar"),
+            avatar_color=data.get("avatar_color"),
             bot=data.get("bot", False),
+            flags=data.get("flags", 0),
             _http=http,
         )
 
@@ -40,6 +52,15 @@ class User:
         return snowflake_to_datetime(self.id)
 
     @property
+    def display_name(self) -> str:
+        """The best display name for this user.
+
+        Returns global_name if set, otherwise falls back to username.
+        This is the name you should show to users.
+        """
+        return self.global_name or self.username
+
+    @property
     def mention(self) -> str:
         """Return a string that mentions this user in a message."""
         return f"<@{self.id}>"
@@ -47,10 +68,10 @@ class User:
     @property
     def avatar_url(self) -> str | None:
         """URL for the user's avatar, or None if they use the default."""
-        if self.avatar:
-            ext = "gif" if self.avatar.startswith("a_") else "png"
+        if self.avatar_hash:
+            ext = "gif" if self.avatar_hash.startswith("a_") else "png"
             return (
-                f"https://fluxerusercontent.com/avatars/{self.id}/{self.avatar}.{ext}"
+                f"https://fluxerusercontent.com/avatars/{self.id}/{self.avatar_hash}.{ext}"
             )
         return None
 
@@ -67,6 +88,8 @@ class User:
         return hash(self.id)
 
     def __str__(self) -> str:
-        if self.discriminator:
-            return f"{self.username}#{self.discriminator}"
-        return self.username
+        """Return the user's display name.
+
+        Uses global_name if available, otherwise username.
+        """
+        return self.global_name or self.username
