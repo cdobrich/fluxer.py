@@ -1305,20 +1305,22 @@ class HTTPClient:
         """Convert an emoji object to URL format for reaction endpoints.
 
         Args:
-            emoji: PartialEmoji, Emoji, or str (unicode emoji)
+            emoji: PartialEmoji, Emoji, or str (unicode emoji or :shortcode:)
 
         Returns:
-            Raw emoji string for yarl to URL-encode, or "name:id" for custom emojis
+            URL-encoded emoji string or "name:id" for custom emojis
         """
         import re
+        import emoji as emoji_lib
+        import urllib.parse
 
         # Handle PartialEmoji or Emoji objects
         if hasattr(emoji, "id") and emoji.id:
-            # Custom emoji: name:id
+            # Custom emoji: name:id (no encoding needed)
             return f"{emoji.name}:{emoji.id}"
         elif hasattr(emoji, "name") and emoji.name:
-            # Unicode emoji from PartialEmoji - return raw unicode
-            return emoji.name
+            # Unicode emoji from PartialEmoji
+            return urllib.parse.quote(emoji.name, safe='')
         else:
             # Handle string emojis
             emoji_str = str(emoji)
@@ -1330,8 +1332,12 @@ class HTTPClient:
                 name, emoji_id = custom_emoji_match.groups()
                 return f"{name}:{emoji_id}"
 
-            # Plain unicode emoji - return as-is, yarl will handle encoding
-            return emoji_str
+            # Convert shortcode to unicode emoji (e.g., :joy: → 😂)
+            # emojize will convert :joy: to 😂, but leave 😂 as-is
+            emoji_str = emoji_lib.emojize(emoji_str, language='alias')
+
+            # URL-encode the result
+            return urllib.parse.quote(emoji_str, safe='')
 
     async def add_reaction(
         self,
@@ -1349,15 +1355,15 @@ class HTTPClient:
             emoji: Emoji to react with (PartialEmoji, Emoji, or unicode string)
         """
         emoji_str = self._emoji_to_url_format(emoji)
-        route = Route(
-            "PUT",
-            "/channels/{channel_id}/messages/{message_id}/reactions/{emoji}/@me",
-            channel_id=channel_id,
-            message_id=message_id,
-            emoji=emoji_str,
+        await self.request(
+            Route(
+                "PUT",
+                "/channels/{channel_id}/messages/{message_id}/reactions/{emoji}/@me",
+                channel_id=channel_id,
+                message_id=message_id,
+                emoji=emoji_str,
+            )
         )
-        log.debug(f"Adding reaction - URL: {route.url}, emoji_str: {emoji_str}")
-        await self.request(route)
 
     async def delete_reaction(
         self,
