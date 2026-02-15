@@ -311,8 +311,18 @@ class HTTPClient:
         content: str | None = None,
         embeds: list[dict[str, Any]] | None = None,
         files: list[Any] | None = None,
+        message_reference: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        """POST /channels/{channel_id}/messages"""
+        """POST /channels/{channel_id}/messages
+
+        Args:
+            channel_id: The channel to send the message to
+            content: The message content
+            embeds: List of embed objects
+            files: List of file objects to attach
+            message_reference: Reference to another message for replies
+                Example: {"message_id": "123456789", "channel_id": "987654321"}
+        """
         route = Route("POST", "/channels/{channel_id}/messages", channel_id=channel_id)
 
         payload: dict[str, Any] = {}
@@ -320,11 +330,20 @@ class HTTPClient:
             payload["content"] = content
         if embeds is not None:
             payload["embeds"] = embeds
+        if message_reference is not None:
+            payload["message_reference"] = message_reference
 
         if files:
             # Use multipart form data for file uploads
+            # Discord/Fluxer API requires an 'attachments' field in the JSON payload
+            # that describes each file by id and filename
             form = aiohttp.FormData()
             import json as json_mod
+
+            # Add attachment metadata to payload
+            payload["attachments"] = [
+                {"id": i, "filename": file["filename"]} for i, file in enumerate(files)
+            ]
 
             form.add_field(
                 "payload_json", json_mod.dumps(payload), content_type="application/json"
@@ -334,6 +353,20 @@ class HTTPClient:
             return await self.request(route, data=form)
 
         return await self.request(route, json=payload)
+
+    async def get_message(
+        self,
+        channel_id: int | str,
+        message_id: int | str,
+    ) -> dict[str, Any]:
+        """GET /channels/{channel_id}/messages/{message_id} - Fetch a single message"""
+        route = Route(
+            "GET",
+            "/channels/{channel_id}/messages/{message_id}",
+            channel_id=channel_id,
+            message_id=message_id,
+        )
+        return await self.request(route)
 
     async def get_messages(
         self,
@@ -577,6 +610,252 @@ class HTTPClient:
                 guild_id=guild_id,
                 role_id=role_id,
             )
+        )
+
+    # -- Member Role Management --
+    async def add_guild_member_role(
+        self,
+        guild_id: int | str,
+        user_id: int | str,
+        role_id: int | str,
+        *,
+        reason: str | None = None,
+    ) -> None:
+        """PUT /guilds/{guild_id}/members/{user_id}/roles/{role_id} — Add a role to a member.
+
+        Args:
+            guild_id: Guild ID
+            user_id: User/Member ID
+            role_id: Role ID to add
+            reason: Reason for audit log
+
+        Returns:
+            None (204 No Content)
+        """
+        await self.request(
+            Route(
+                "PUT",
+                "/guilds/{guild_id}/members/{user_id}/roles/{role_id}",
+                guild_id=guild_id,
+                user_id=user_id,
+                role_id=role_id,
+            ),
+            reason=reason,
+        )
+
+    async def remove_guild_member_role(
+        self,
+        guild_id: int | str,
+        user_id: int | str,
+        role_id: int | str,
+        *,
+        reason: str | None = None,
+    ) -> None:
+        """DELETE /guilds/{guild_id}/members/{user_id}/roles/{role_id} — Remove a role from a member.
+
+        Args:
+            guild_id: Guild ID
+            user_id: User/Member ID
+            role_id: Role ID to remove
+            reason: Reason for audit log
+
+        Returns:
+            None (204 No Content)
+        """
+        await self.request(
+            Route(
+                "DELETE",
+                "/guilds/{guild_id}/members/{user_id}/roles/{role_id}",
+                guild_id=guild_id,
+                user_id=user_id,
+                role_id=role_id,
+            ),
+            reason=reason,
+        )
+
+    # -- Moderation --
+    async def kick_guild_member(
+        self,
+        guild_id: int | str,
+        user_id: int | str,
+        *,
+        reason: str | None = None,
+    ) -> None:
+        """DELETE /guilds/{guild_id}/members/{user_id} — Remove (kick) a member from a guild.
+
+        Args:
+            guild_id: Guild ID
+            user_id: User/Member ID to kick
+            reason: Reason for audit log
+
+        Returns:
+            None (204 No Content)
+        """
+        await self.request(
+            Route(
+                "DELETE",
+                "/guilds/{guild_id}/members/{user_id}",
+                guild_id=guild_id,
+                user_id=user_id,
+            ),
+            reason=reason,
+        )
+
+    async def ban_guild_member(
+        self,
+        guild_id: int | str,
+        user_id: int | str,
+        *,
+        delete_message_days: int = 0,
+        delete_message_seconds: int = 0,
+        reason: str | None = None,
+    ) -> None:
+        """PUT /guilds/{guild_id}/bans/{user_id} — Ban a member from a guild.
+
+        Args:
+            guild_id: Guild ID
+            user_id: User/Member ID to ban
+            delete_message_days: Number of days to delete messages for (0-7, deprecated)
+            delete_message_seconds: Number of seconds to delete messages for (0-604800)
+            reason: Reason for audit log
+
+        Returns:
+            None (204 No Content)
+        """
+        payload: dict[str, Any] = {}
+        if delete_message_days > 0:
+            payload["delete_message_days"] = delete_message_days
+        if delete_message_seconds > 0:
+            payload["delete_message_seconds"] = delete_message_seconds
+
+        await self.request(
+            Route(
+                "PUT",
+                "/guilds/{guild_id}/bans/{user_id}",
+                guild_id=guild_id,
+                user_id=user_id,
+            ),
+            json=payload if payload else None,
+            reason=reason,
+        )
+
+    async def unban_guild_member(
+        self,
+        guild_id: int | str,
+        user_id: int | str,
+        *,
+        reason: str | None = None,
+    ) -> None:
+        """DELETE /guilds/{guild_id}/bans/{user_id} — Unban a user from a guild.
+
+        Args:
+            guild_id: Guild ID
+            user_id: User ID to unban
+            reason: Reason for audit log
+
+        Returns:
+            None (204 No Content)
+        """
+        await self.request(
+            Route(
+                "DELETE",
+                "/guilds/{guild_id}/bans/{user_id}",
+                guild_id=guild_id,
+                user_id=user_id,
+            ),
+            reason=reason,
+        )
+
+    async def timeout_guild_member(
+        self,
+        guild_id: int | str,
+        user_id: int | str,
+        *,
+        until: str | None = None,
+        reason: str | None = None,
+    ) -> dict[str, Any]:
+        """PATCH /guilds/{guild_id}/members/{user_id} — Timeout (or remove timeout from) a member.
+
+        Args:
+            guild_id: Guild ID
+            user_id: User/Member ID to timeout
+            until: ISO 8601 timestamp for when timeout expires (None to remove timeout)
+            reason: Reason for audit log
+
+        Returns:
+            Updated member object
+        """
+        payload: dict[str, Any] = {
+            "communication_disabled_until": until,
+        }
+
+        return await self.request(
+            Route(
+                "PATCH",
+                "/guilds/{guild_id}/members/{user_id}",
+                guild_id=guild_id,
+                user_id=user_id,
+            ),
+            json=payload,
+            reason=reason,
+        )
+
+    async def modify_guild_member(
+        self,
+        guild_id: int | str,
+        user_id: int | str,
+        *,
+        nick: str | None = None,
+        roles: list[int | str] | None = None,
+        mute: bool | None = None,
+        deaf: bool | None = None,
+        channel_id: int | str | None = None,
+        communication_disabled_until: str | None = None,
+        reason: str | None = None,
+        **kwargs: Any,
+    ) -> dict[str, Any]:
+        """PATCH /guilds/{guild_id}/members/{user_id} — Modify a guild member.
+
+        Args:
+            guild_id: Guild ID
+            user_id: User/Member ID to modify
+            nick: New nickname (None to remove)
+            roles: List of role IDs to set (replaces all roles)
+            mute: Whether to mute in voice channels
+            deaf: Whether to deafen in voice channels
+            channel_id: Voice channel to move member to
+            communication_disabled_until: Timeout timestamp (ISO 8601)
+            reason: Reason for audit log
+
+        Returns:
+            Updated member object
+        """
+        payload: dict[str, Any] = {}
+
+        if nick is not None:
+            payload["nick"] = nick
+        if roles is not None:
+            payload["roles"] = [str(r) for r in roles]
+        if mute is not None:
+            payload["mute"] = mute
+        if deaf is not None:
+            payload["deaf"] = deaf
+        if channel_id is not None:
+            payload["channel_id"] = str(channel_id)
+        if communication_disabled_until is not None:
+            payload["communication_disabled_until"] = communication_disabled_until
+
+        payload.update(kwargs)
+
+        return await self.request(
+            Route(
+                "PATCH",
+                "/guilds/{guild_id}/members/{user_id}",
+                guild_id=guild_id,
+                user_id=user_id,
+            ),
+            json=payload,
+            reason=reason,
         )
 
     # -- Channels (create/modify) --
@@ -1019,4 +1298,179 @@ class HTTPClient:
             ),
             json=payload,
             params=params,
+        )
+
+    # -- Reactions --
+    def _emoji_to_url_format(self, emoji: Any) -> str:
+        """Convert an emoji object to URL format for reaction endpoints.
+
+        Args:
+            emoji: PartialEmoji, Emoji, or str (unicode emoji)
+
+        Returns:
+            Raw emoji string for yarl to URL-encode, or "name:id" for custom emojis
+        """
+        import re
+
+        # Handle PartialEmoji or Emoji objects
+        if hasattr(emoji, "id") and emoji.id:
+            # Custom emoji: name:id
+            return f"{emoji.name}:{emoji.id}"
+        elif hasattr(emoji, "name") and emoji.name:
+            # Unicode emoji from PartialEmoji - return raw unicode
+            return emoji.name
+        else:
+            # Handle string emojis
+            emoji_str = str(emoji)
+
+            # Check for custom emoji format: <:name:id> or <a:name:id>
+            custom_emoji_match = re.match(r'^<a?:([^:]+):(\d+)>$', emoji_str)
+            if custom_emoji_match:
+                # Extract name and id, return as name:id
+                name, emoji_id = custom_emoji_match.groups()
+                return f"{name}:{emoji_id}"
+
+            # Plain unicode emoji - return as-is, yarl will handle encoding
+            return emoji_str
+
+    async def add_reaction(
+        self,
+        channel_id: int | str,
+        message_id: int | str,
+        emoji: Any,
+    ) -> None:
+        """PUT /channels/{channel_id}/messages/{message_id}/reactions/{emoji}/@me
+
+        Add a reaction to a message.
+
+        Args:
+            channel_id: Channel ID
+            message_id: Message ID
+            emoji: Emoji to react with (PartialEmoji, Emoji, or unicode string)
+        """
+        emoji_str = self._emoji_to_url_format(emoji)
+        route = Route(
+            "PUT",
+            "/channels/{channel_id}/messages/{message_id}/reactions/{emoji}/@me",
+            channel_id=channel_id,
+            message_id=message_id,
+            emoji=emoji_str,
+        )
+        log.debug(f"Adding reaction - URL: {route.url}, emoji_str: {emoji_str}")
+        await self.request(route)
+
+    async def delete_reaction(
+        self,
+        channel_id: int | str,
+        message_id: int | str,
+        emoji: Any,
+        user_id: int | str = "@me",
+    ) -> None:
+        """DELETE /channels/{channel_id}/messages/{message_id}/reactions/{emoji}/{user_id}
+
+        Remove a reaction from a message.
+
+        Args:
+            channel_id: Channel ID
+            message_id: Message ID
+            emoji: Emoji to remove (PartialEmoji, Emoji, or unicode string)
+            user_id: User ID to remove reaction from (default: @me)
+        """
+        emoji_str = self._emoji_to_url_format(emoji)
+        await self.request(
+            Route(
+                "DELETE",
+                "/channels/{channel_id}/messages/{message_id}/reactions/{emoji}/{user_id}",
+                channel_id=channel_id,
+                message_id=message_id,
+                emoji=emoji_str,
+                user_id=user_id,
+            )
+        )
+
+    async def get_reaction_users(
+        self,
+        channel_id: int | str,
+        message_id: int | str,
+        emoji: Any,
+        *,
+        limit: int = 25,
+        after: int | str | None = None,
+    ) -> list[dict[str, Any]]:
+        """GET /channels/{channel_id}/messages/{message_id}/reactions/{emoji}
+
+        Get users who reacted with a specific emoji.
+
+        Args:
+            channel_id: Channel ID
+            message_id: Message ID
+            emoji: Emoji to get users for (PartialEmoji, Emoji, or unicode string)
+            limit: Max number of users to return (1-100, default 25)
+            after: Get users after this user ID
+
+        Returns:
+            List of user objects
+        """
+        emoji_str = self._emoji_to_url_format(emoji)
+        params: dict[str, Any] = {"limit": limit}
+        if after:
+            params["after"] = after
+
+        return await self.request(
+            Route(
+                "GET",
+                "/channels/{channel_id}/messages/{message_id}/reactions/{emoji}",
+                channel_id=channel_id,
+                message_id=message_id,
+                emoji=emoji_str,
+            ),
+            params=params,
+        )
+
+    async def delete_all_reactions(
+        self,
+        channel_id: int | str,
+        message_id: int | str,
+    ) -> None:
+        """DELETE /channels/{channel_id}/messages/{message_id}/reactions
+
+        Remove all reactions from a message.
+
+        Args:
+            channel_id: Channel ID
+            message_id: Message ID
+        """
+        await self.request(
+            Route(
+                "DELETE",
+                "/channels/{channel_id}/messages/{message_id}/reactions",
+                channel_id=channel_id,
+                message_id=message_id,
+            )
+        )
+
+    async def delete_all_reactions_for_emoji(
+        self,
+        channel_id: int | str,
+        message_id: int | str,
+        emoji: Any,
+    ) -> None:
+        """DELETE /channels/{channel_id}/messages/{message_id}/reactions/{emoji}
+
+        Remove all reactions of a specific emoji from a message.
+
+        Args:
+            channel_id: Channel ID
+            message_id: Message ID
+            emoji: Emoji to remove all reactions for (PartialEmoji, Emoji, or unicode string)
+        """
+        emoji_str = self._emoji_to_url_format(emoji)
+        await self.request(
+            Route(
+                "DELETE",
+                "/channels/{channel_id}/messages/{message_id}/reactions/{emoji}",
+                channel_id=channel_id,
+                message_id=message_id,
+                emoji=emoji_str,
+            )
         )

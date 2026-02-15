@@ -163,6 +163,18 @@ class Client:
             case "RESUMED":
                 await self._fire("on_resumed")
 
+            case "MESSAGE_REACTION_ADD":
+                await self._handle_reaction_add(data)
+
+            case "MESSAGE_REACTION_REMOVE":
+                await self._handle_reaction_remove(data)
+
+            case "MESSAGE_REACTION_REMOVE_ALL":
+                await self._handle_reaction_remove_all(data)
+
+            case "MESSAGE_REACTION_REMOVE_EMOJI":
+                await self._handle_reaction_remove_emoji(data)
+
             case _:
                 # Unknown/unhandled event — fire a generic handler
                 handler_name = f"on_{event_name.lower()}"
@@ -176,6 +188,60 @@ class Client:
         if cached_channel:
             msg._channel = cached_channel
         return msg
+
+    async def _handle_reaction_add(self, data: dict[str, Any]) -> None:
+        """Handle MESSAGE_REACTION_ADD event."""
+        from .models.reaction import PartialEmoji, RawReactionActionEvent
+
+        emoji = PartialEmoji.from_data(data["emoji"])
+        raw = RawReactionActionEvent.from_data(data, "REACTION_ADD")
+
+        # Fire raw event (always fires, even if message not cached)
+        await self._fire("on_raw_reaction_add", raw)
+
+        # Try to find the message in cache
+        message_id = str(raw.message_id)
+        message = None
+
+        # Search through channels for the message
+        for channel in self._channels.values():
+            # Check if channel has a message cache (simple implementation)
+            # In a more complete implementation, you'd have a proper message cache
+            pass
+
+        # For now, we'll just fire the raw event
+        # In a complete implementation, you would:
+        # 1. Check message cache
+        # 2. Update message reactions
+        # 3. Fire on_reaction_add with the full Reaction object
+
+    async def _handle_reaction_remove(self, data: dict[str, Any]) -> None:
+        """Handle MESSAGE_REACTION_REMOVE event."""
+        from .models.reaction import PartialEmoji, RawReactionActionEvent
+
+        emoji = PartialEmoji.from_data(data["emoji"])
+        raw = RawReactionActionEvent.from_data(data, "REACTION_REMOVE")
+
+        # Fire raw event (always fires, even if message not cached)
+        await self._fire("on_raw_reaction_remove", raw)
+
+    async def _handle_reaction_remove_all(self, data: dict[str, Any]) -> None:
+        """Handle MESSAGE_REACTION_REMOVE_ALL event."""
+        from .models.reaction import RawReactionClearEvent
+
+        raw = RawReactionClearEvent.from_data(data)
+
+        # Fire raw event (always fires, even if message not cached)
+        await self._fire("on_raw_reaction_clear", raw)
+
+    async def _handle_reaction_remove_emoji(self, data: dict[str, Any]) -> None:
+        """Handle MESSAGE_REACTION_REMOVE_EMOJI event."""
+        from .models.reaction import RawReactionClearEmojiEvent
+
+        raw = RawReactionClearEmojiEvent.from_data(data)
+
+        # Fire raw event (always fires, even if message not cached)
+        await self._fire("on_raw_reaction_clear_emoji", raw)
 
     async def _fire(self, event_name: str, *args: Any) -> None:
         """Fire all registered handlers for an event."""
@@ -197,6 +263,12 @@ class Client:
         ch = Channel.from_data(data, self._http)
         self._channels[ch.id] = ch
         return ch
+
+    async def fetch_message(self, channel_id: str, message_id: str) -> Message:
+        """Fetch a message from the API by channel ID and message ID."""
+        assert self._http is not None
+        data = await self._http.get_message(channel_id, message_id)
+        return Message.from_data(data, self._http)
 
     async def fetch_guild(self, guild_id: str) -> Guild:
         """Fetch a guild from the API."""
@@ -258,6 +330,84 @@ class Client:
         return Webhook.from_data(data, self._http)
 
     # =========================================================================
+    # Reaction methods
+    # =========================================================================
+
+    async def add_reaction(
+        self, channel_id: int | str, message_id: int | str, emoji: str
+    ) -> None:
+        """Add a reaction to a message by channel_id and message_id.
+
+        Args:
+            channel_id: The channel ID
+            message_id: The message ID
+            emoji: The emoji to react with (unicode string or custom emoji format)
+
+        Raises:
+            Forbidden: You don't have permission to add reactions
+            NotFound: The message doesn't exist
+            HTTPException: Adding the reaction failed
+        """
+        assert self._http is not None
+        await self._http.add_reaction(channel_id, message_id, emoji)
+
+    async def remove_reaction(
+        self,
+        channel_id: int | str,
+        message_id: int | str,
+        emoji: str,
+        user_id: int | str = "@me",
+    ) -> None:
+        """Remove a reaction from a message by channel_id and message_id.
+
+        Args:
+            channel_id: The channel ID
+            message_id: The message ID
+            emoji: The emoji to remove (unicode string or custom emoji format)
+            user_id: The user ID to remove the reaction from (default: @me)
+
+        Raises:
+            Forbidden: You don't have permission to remove this reaction
+            NotFound: The message or reaction doesn't exist
+            HTTPException: Removing the reaction failed
+        """
+        assert self._http is not None
+        await self._http.delete_reaction(channel_id, message_id, emoji, user_id)
+
+    async def clear_reactions(self, channel_id: int | str, message_id: int | str) -> None:
+        """Remove all reactions from a message.
+
+        Args:
+            channel_id: The channel ID
+            message_id: The message ID
+
+        Raises:
+            Forbidden: You don't have permission to clear reactions
+            NotFound: The message doesn't exist
+            HTTPException: Clearing reactions failed
+        """
+        assert self._http is not None
+        await self._http.delete_all_reactions(channel_id, message_id)
+
+    async def clear_reaction(
+        self, channel_id: int | str, message_id: int | str, emoji: str
+    ) -> None:
+        """Remove all reactions of a specific emoji from a message.
+
+        Args:
+            channel_id: The channel ID
+            message_id: The message ID
+            emoji: The emoji to clear (unicode string or custom emoji format)
+
+        Raises:
+            Forbidden: You don't have permission to clear reactions
+            NotFound: The message doesn't exist
+            HTTPException: Clearing reactions failed
+        """
+        assert self._http is not None
+        await self._http.delete_all_reactions_for_emoji(channel_id, message_id, emoji)
+
+    # =========================================================================
     # Connection lifecycle
     # =========================================================================
 
@@ -314,7 +464,7 @@ class Client:
 class Bot(Client):
     """Extended Client with common bot conveniences.
 
-    Adds prefix command support and other bot-specific features.
+    Adds prefix command support, cog support, and other bot-specific features.
     This is the recommended class for most bot use cases.
     """
 
@@ -327,6 +477,7 @@ class Bot(Client):
         super().__init__(intents=intents)
         self.command_prefix = command_prefix
         self._commands: dict[str, EventHandler] = {}
+        self._cogs: dict[str, Any] = {}  # Store loaded cogs
 
         # Auto-register the command dispatcher
         @self.event
@@ -365,10 +516,141 @@ class Bot(Client):
 
         # Parse command name and args
         content = message.content[len(self.command_prefix) :]
-        for cmd, handler in self._commands.items():
+        # Use list() to avoid RuntimeError if commands dict is modified during iteration
+        for cmd, handler in list(self._commands.items()):
             if content.startswith(cmd):
                 if handler:
                     try:
                         await handler(message)
                     except Exception:
                         log.exception("Error in command '%s'", cmd)
+
+    # =========================================================================
+    # Cog management
+    # =========================================================================
+
+    async def add_cog(self, cog: Any) -> None:
+        """Add a cog to the bot.
+
+        Args:
+            cog: An instance of a Cog subclass.
+
+        Example:
+            class MyCog(Cog):
+                @Cog.command()
+                async def hello(self, message):
+                    await message.reply("Hello!")
+
+            bot = Bot()
+            await bot.add_cog(MyCog(bot))
+        """
+        cog_name = cog.__class__.__name__
+
+        if cog_name in self._cogs:
+            raise ValueError(f"Cog '{cog_name}' is already loaded")
+
+        # Register cog's commands
+        for cmd_name, handler in cog._commands.items():
+            if cmd_name in self._commands:
+                log.warning(
+                    "Command '%s' from cog '%s' overwrites existing command",
+                    cmd_name,
+                    cog_name,
+                )
+            self._commands[cmd_name] = handler
+
+        # Register cog's event listeners
+        for event_name, listeners in cog._listeners.items():
+            for listener in listeners:
+                # Add to the client's event handlers
+                if event_name not in self._event_handlers:
+                    self._event_handlers[event_name] = []
+                self._event_handlers[event_name].append(listener)
+
+        # Store the cog
+        self._cogs[cog_name] = cog
+
+        # Call the cog's load hook
+        await cog.cog_load()
+
+        log.info("Loaded cog: %s", cog_name)
+
+    async def remove_cog(self, cog_name: str) -> None:
+        """Remove a cog from the bot.
+
+        Args:
+            cog_name: The name of the cog class to remove.
+
+        Example:
+            await bot.remove_cog("MyCog")
+        """
+        if cog_name not in self._cogs:
+            raise ValueError(f"Cog '{cog_name}' is not loaded")
+
+        cog = self._cogs[cog_name]
+
+        # Call the cog's unload hook
+        await cog.cog_unload()
+
+        # Remove cog's commands
+        for cmd_name in list(cog._commands.keys()):
+            self._commands.pop(cmd_name, None)
+
+        # Remove cog's event listeners
+        for event_name, listeners in cog._listeners.items():
+            if event_name in self._event_handlers:
+                for listener in listeners:
+                    try:
+                        self._event_handlers[event_name].remove(listener)
+                    except ValueError:
+                        pass
+
+        # Remove the cog
+        del self._cogs[cog_name]
+
+        log.info("Removed cog: %s", cog_name)
+
+    async def reload_cog(self, cog_name: str) -> None:
+        """Reload a cog by removing and re-adding it.
+
+        This is useful during development to reload code changes without restarting the bot.
+        Note: You'll need to reimport the module and create a new instance.
+
+        Args:
+            cog_name: The name of the cog class to reload.
+
+        Example:
+            import importlib
+            import my_cogs
+
+            # Reload the module
+            importlib.reload(my_cogs)
+
+            # Remove old cog
+            await bot.remove_cog("MyCog")
+
+            # Add new cog
+            await bot.add_cog(my_cogs.MyCog(bot))
+        """
+        if cog_name not in self._cogs:
+            raise ValueError(f"Cog '{cog_name}' is not loaded")
+
+        # For simple reload, just remove and let the user re-add
+        await self.remove_cog(cog_name)
+        log.info("Cog '%s' removed. Please re-add it with add_cog().", cog_name)
+
+    def get_cog(self, cog_name: str) -> Any | None:
+        """Get a loaded cog by name.
+
+        Args:
+            cog_name: The name of the cog class.
+
+        Returns:
+            The cog instance, or None if not found.
+        """
+        return self._cogs.get(cog_name)
+
+    @property
+    def cogs(self) -> dict[str, Any]:
+        """Get all loaded cogs."""
+        return self._cogs.copy()
